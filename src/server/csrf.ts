@@ -173,11 +173,23 @@
  * @author [Sergio Xalambrí](https://sergiodxa.com)
  * @module Server/CSRF
  */
-import { sha256 } from "@oslojs/crypto/sha2";
+import { hmac } from "@oslojs/crypto/hmac";
+import { SHA256 } from "@oslojs/crypto/sha2";
 import { encodeBase64url } from "@oslojs/encoding";
 import type { Cookie } from "react-router";
 import { randomString } from "../common/crypto.js";
 import { getHeaders } from "./get-headers.js";
+
+function timingSafeEqual(a: string, b: string) {
+	let mismatch = a.length ^ b.length;
+	let maxLength = Math.max(a.length, b.length);
+
+	for (let index = 0; index < maxLength; index++) {
+		mismatch |= (a.charCodeAt(index) || 0) ^ (b.charCodeAt(index) || 0);
+	}
+
+	return mismatch === 0;
+}
 
 export type CSRFErrorCode =
 	| "missing_token_in_cookie"
@@ -343,14 +355,15 @@ export class CSRF {
 
 	private sign(token: string) {
 		if (!this.secret) return token;
-		return encodeBase64url(sha256(new TextEncoder().encode(token)));
+		let encoder = new TextEncoder();
+		return encodeBase64url(hmac(SHA256, encoder.encode(this.secret), encoder.encode(token)));
 	}
 
 	private verifySignature(token: string) {
 		if (!this.secret) return true;
 		let [value, signature] = token.split(".");
-		if (!value) return false;
+		if (!value || !signature) return false;
 		let expectedSignature = this.sign(value);
-		return signature === expectedSignature;
+		return timingSafeEqual(signature, expectedSignature);
 	}
 }
